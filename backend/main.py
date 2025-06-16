@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -12,6 +13,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class JournalEntry(BaseModel):
+    text: str
+
 @app.get("/")
 def root():
     return {"message": "MindMate backend is running!"}
+
+@app.post("/journal")
+def submit_journal(entry: JournalEntry):
+    # For now, just echo back the journal length
+    length = len(entry.text)
+    return {"message": f"Received journal with {length} characters."}
