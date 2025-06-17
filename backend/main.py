@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from transformers import pipeline
 
 app = FastAPI()
 
@@ -16,12 +17,27 @@ app.add_middleware(
 class JournalEntry(BaseModel):
     text: str
 
+# Load HuggingFace models (once at startup)
+sentiment_model = pipeline("sentiment-analysis", model="finiteautomata/bertweet-base-sentiment-analysis" )
+emotion_model = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", return_all_scores=True)
+
+
 @app.get("/")
 def root():
     return {"message": "MindMate backend is running!"}
 
 @app.post("/journal")
-def submit_journal(entry: JournalEntry):
-    # For now, just echo back the journal length
-    length = len(entry.text)
-    return {"message": f"Received journal with {length} characters."}
+def analyze_journal(entry: JournalEntry):
+    text = entry.text
+
+    #Analyze sentiment
+    sentiment_result = sentiment_model(text)[0]
+
+    # Analyze emotion (pick the highest scored emotion)
+    emotion_scores = emotion_model(text)[0]
+    emotion_result = max(emotion_scores, key=lambda x: x['score'])
+
+    return {
+        "sentiment": sentiment_result,
+        "emotion": emotion_result
+    }
