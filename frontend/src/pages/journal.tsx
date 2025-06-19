@@ -5,7 +5,8 @@ export default function Journal() {
   //response: Stores the sentiment,emotion,confidence returned by backend.
   const [emotion, setEmotion] = useState('');
   const [sentiment, setSentiment] = useState('');
-  const [confidence, setConfidence] = useState<number | null>(null);
+  // const [confidence, setConfidence] = useState<number | null>(null);
+  const [affirmation, setAffirmation] = useState('');
   const [loading, setLoading] = useState(false);
 
   
@@ -28,7 +29,7 @@ export default function Journal() {
     // We'll define this in the backend next
     setSentiment(data.sentiment.label);
     setEmotion(data.emotion.label);
-    setConfidence(data.emotion.score);
+    setAffirmation(data.affirmation);
     setLoading(false);
   };
 
@@ -55,8 +56,8 @@ export default function Journal() {
         <div className="mt-6 p-4 bg-white rounded shadow bg-white text-black">
           <p className="mb-2"><strong>Detected Emotion:</strong> {emotion}</p>
           <p className="mb-2"><strong>Detected Sentiment:</strong> {sentiment}</p>
-          {confidence && (
-            <p className="text-sm text-gray-500">Confidence: {(confidence * 100).toFixed(2)}%</p>
+          {affirmation && (
+            <p className="mt-4 p-4 bg-green-100 rounded text-green-800 shadow">Affirmation: {affirmation}</p>
           )}
         </div>
       )}
