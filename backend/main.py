@@ -1,14 +1,16 @@
-from openai import OpenAI
+#from openai import OpenAI
+import cohere
 from dotenv import load_dotenv
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from transformers import pipeline
+from transformers import pipeline, T5Tokenizer, T5ForConditionalGeneration
 
 app = FastAPI()
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+co = cohere.Client(os.getenv("COHERE_API_KEY"))
 
 # Allow frontend calls
 app.add_middleware(
@@ -25,6 +27,8 @@ class JournalEntry(BaseModel):
 # Load HuggingFace models (once at startup)
 sentiment_model = pipeline("sentiment-analysis", model="finiteautomata/bertweet-base-sentiment-analysis" )
 emotion_model = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", return_all_scores=True)
+t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
+t5_model = T5ForConditionalGeneration.from_pretrained("t5-base")
 
 
 @app.get("/")
@@ -42,22 +46,20 @@ def analyze_journal(entry: JournalEntry):
     emotion_scores = emotion_model(text)[0]
     emotion_result = max(emotion_scores, key=lambda x: x['score'])
 
-    # Generate affirmation using OpenAI
-    prompt = f"""You are a kind, empathetic mental health coach. A user just wrote the following journal entry: "{text}". They are feeling {emotion_result['label']}. Write a 1-sentence affirmation that is supportive and non-judgmental."""
+    # Generate affirmation using Cohere
+    prompt = f"You are a kind and supportive mental health assistant. Write a 1-line affirmation for someone who feels {emotion_result['label']}. Their journal entry: \"{text}\""
     try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a mental health support assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=60
+        response = co.generate(
+            model="command-r-plus",  # You can also try "command-r-plus"
+            prompt=prompt,
+            max_tokens=60,
+            temperature=0.8
         )
-        affirmation = response.choices[0].message.content.strip()
+        affirmation = response.generations[0].text.strip()
     except Exception as e:
-        print("OpenAI Error:", e)  # 🔍 Add this line to see the actual error in terminal
+        print("Cohere Error:", e)
         affirmation = "We're here for you. You're not alone."
+        
 
     return {
         "sentiment": sentiment_result,
