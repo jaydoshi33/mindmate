@@ -1,4 +1,11 @@
 #from openai import OpenAI
+from typing import List
+from fastapi.responses import JSONResponse
+from database import SessionLocal
+from models import JournalEntry as JournalEntryModel
+from sqlalchemy.future import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
 import cohere
 from dotenv import load_dotenv
 import os
@@ -35,8 +42,13 @@ t5_model = T5ForConditionalGeneration.from_pretrained("t5-base")
 def root():
     return {"message": "MindMate backend is running!"}
 
+# Dependency to get DB session
+async def get_db():
+    async with SessionLocal() as session:
+        yield session
+
 @app.post("/journal")
-def analyze_journal(entry: JournalEntry):
+async def analyze_journal(entry: JournalEntry, db: AsyncSession = Depends(get_db)):
     text = entry.text
 
     #Analyze sentiment
@@ -60,9 +72,36 @@ def analyze_journal(entry: JournalEntry):
         print("Cohere Error:", e)
         affirmation = "We're here for you. You're not alone."
         
+    # Save to DB
+    new_entry = JournalEntryModel(
+        text=text,
+        sentiment=sentiment_result['label'],
+        emotion=emotion_result['label'],
+        affirmation=affirmation
+    )
+    db.add(new_entry)
+    await db.commit()
 
     return {
         "sentiment": sentiment_result,
         "emotion": emotion_result,
         "affirmation": affirmation
     }
+
+@app.get("/journal-history")
+async def get_journal_history(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(JournalEntryModel).order_by(JournalEntryModel.id.desc()))
+    entries = result.scalars().all()
+    
+    # Convert to dict to return as JSON
+    return JSONResponse([
+        {
+            "id": entry.id,
+            "text": entry.text,
+            "sentiment": entry.sentiment,
+            "emotion": entry.emotion,
+            "affirmation": entry.affirmation,
+            "timestamp": entry.timestamp.isoformat() if entry.timestamp else None
+        }
+        for entry in entries
+    ])
