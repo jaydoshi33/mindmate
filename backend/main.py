@@ -3,16 +3,18 @@ from typing import List
 from fastapi.responses import JSONResponse
 from database import SessionLocal
 from models import JournalEntry as JournalEntryModel
-from sqlalchemy.future import select
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 import cohere
 from dotenv import load_dotenv
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI,Depends, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from transformers import pipeline, T5Tokenizer, T5ForConditionalGeneration
+from transformers import pipeline
+from datetime import datetime
+from typing import Optional
+
 
 app = FastAPI()
 load_dotenv()
@@ -34,8 +36,6 @@ class JournalEntry(BaseModel):
 # Load HuggingFace models (once at startup)
 sentiment_model = pipeline("sentiment-analysis", model="finiteautomata/bertweet-base-sentiment-analysis" )
 emotion_model = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", return_all_scores=True)
-t5_tokenizer = T5Tokenizer.from_pretrained("t5-base")
-t5_model = T5ForConditionalGeneration.from_pretrained("t5-base")
 
 
 @app.get("/")
@@ -89,8 +89,41 @@ async def analyze_journal(entry: JournalEntry, db: AsyncSession = Depends(get_db
     }
 
 @app.get("/journal-history")
-async def get_journal_history(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(JournalEntryModel).order_by(JournalEntryModel.id.desc()))
+async def get_journal_history(
+    db: AsyncSession = Depends(get_db),
+    #get the optional parameters from request
+    emotion: Optional[str] = Query(None),
+    sentiment: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None)
+    ):
+
+    filters = []
+    if emotion:
+        filters.append(JournalEntryModel.emotion == emotion)
+    if sentiment:
+        filters.append(JournalEntryModel.sentiment == sentiment)
+    if start_date:
+        try:
+            start = datetime.fromisoformat(start_date)
+            filters.append(JournalEntryModel.timestamp >= start)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format, use YYYY-MM-DD")
+
+    if end_date:
+        try:
+            end = datetime.fromisoformat(end_date)
+            filters.append(JournalEntryModel.timestamp <= end)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format, use YYYY-MM-DD")
+
+
+    # Query the DB
+    query = select(JournalEntryModel).order_by(JournalEntryModel.id.desc())
+    if filters:
+        query = query.where(and_(*filters))
+
+    result = await db.execute(query)
     entries = result.scalars().all()
     
     # Convert to dict to return as JSON
