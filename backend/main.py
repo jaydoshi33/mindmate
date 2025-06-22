@@ -3,7 +3,7 @@ from typing import List
 from fastapi.responses import JSONResponse
 from database import SessionLocal
 from models import JournalEntry as JournalEntryModel
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func, cast, Date
 from sqlalchemy.ext.asyncio import AsyncSession
 import cohere
 from dotenv import load_dotenv
@@ -138,3 +138,38 @@ async def get_journal_history(
         }
         for entry in entries
     ])
+
+@app.get("/journal-insights")
+async def get_journal_insights(db: AsyncSession = Depends(get_db)):
+    # Count by emotion
+    emotion_result = await db.execute(select(JournalEntryModel.emotion, func.count()).group_by(JournalEntryModel.emotion))
+    emotion_counts = {row[0]: row[1] for row in emotion_result if row[0] is not None}
+    
+    # Count by sentiment
+    sentiment_result = await db.execute(select(JournalEntryModel.sentiment, func.count()).group_by(JournalEntryModel.sentiment))
+    sentiment_counts = {row[0]: row[1] for row in sentiment_result if row[0] is not None}
+
+    # Get entries per day (timeline trend)
+    # First, get all timestamps and process them in Python
+    entries = await db.execute(select(JournalEntryModel.timestamp))
+    
+    # Group by date and count entries per day
+    from collections import defaultdict
+    from datetime import datetime
+    date_counts = defaultdict(int)
+    
+    for row in entries.all():
+        timestamp = row[0]  # Get the timestamp from the row
+        if timestamp is not None:  # Ensure timestamp is not None
+            if isinstance(timestamp, datetime):
+                date_str = timestamp.date().isoformat()
+                date_counts[date_str] += 1
+    
+    # Convert to the expected format
+    timeline = [{"date": date, "count": count} for date, count in sorted(date_counts.items())]
+    
+    return {
+        "emotion_counts": emotion_counts,
+        "sentiment_counts": sentiment_counts,
+        "timeline": timeline
+    }
