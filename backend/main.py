@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import cohere
 from dotenv import load_dotenv
 import os
-from fastapi import FastAPI,Depends, Query, HTTPException
+from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from transformers import pipeline
@@ -173,3 +173,14 @@ async def get_journal_insights(db: AsyncSession = Depends(get_db)):
         "sentiment_counts": sentiment_counts,
         "timeline": timeline
     }
+
+@app.delete("/journal/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_journal_entry(entry_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(JournalEntryModel).where(JournalEntryModel.id == entry_id))
+    entry = result.scalar_one_or_none()
+    
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Journal entry not found")
+    await db.delete(entry)
+    await db.commit()
+    return None
